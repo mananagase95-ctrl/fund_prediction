@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+{% block title %}{{ fund.name or fund.code }} — 基金详情{% endblock %}
+
+{% block content %}
+<!-- 顶部信息栏 -->
+<div class="d-flex flex-wrap align-items-center gap-3 mt-4 mb-3">
+  <div>
+    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm me-2">
+      <i class="bi bi-chevron-left"></i>
+    </a>
+    <span class="fs-5 fw-bold text-info">{{ fund.name or fund.code }}</span>
+    <span class="text-muted ms-2">{{ fund.code }}</span>
+    {% if fund.fund_type %}
+    <span class="badge bg-secondary ms-2">{{ fund.fund_type }}</span>
+    {% endif %}
+  </div>
+
+  {% if latest_nav %}
+  <div class="ms-auto d-flex gap-3 align-items-center">
+    <div class="text-center">
+      <div class="text-muted small">单位净值</div>
+      <div class="fs-4 fw-bold
+        {% if latest_nav.daily_return > 0 %}text-success{% elif latest_nav.daily_return < 0 %}text-danger{% endif %}">
+        {{ '%.4f'|format(latest_nav.nav) }}
+      </div>
+    </div>
+    <div class="text-center">
+      <div class="text-muted small">日涨跌</div>
+      <div class="fs-5 fw-bold
+        {% if latest_nav.daily_return > 0 %}text-success{% elif latest_nav.daily_return < 0 %}text-danger{% endif %}">
+        {{ '%+.2f'|format(latest_nav.daily_return) }}%
+      </div>
+    </div>
+    <div class="text-center">
+      <div class="text-muted small">累计净值</div>
+      <div class="fs-5">{{ '%.4f'|format(latest_nav.acc_nav) }}</div>
+    </div>
+    <div class="text-muted small">{{ latest_nav.nav_date }}</div>
+  </div>
+  {% endif %}
+
+  <!-- 操作按钮 -->
+  <div class="d-flex gap-2">
+    <form method="post" action="{{ url_for('fund_update', code=fund.code) }}">
+      <button class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-clockwise me-1"></i>更新数据
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('fund_analyze', code=fund.code) }}">
+      <button class="btn btn-warning btn-sm" {% if not has_data %}disabled title="请先更新数据"{% endif %}>
+        <i class="bi bi-cpu me-1"></i>AI 分析
+      </button>
+    </form>
+  </div>
+</div>
+
+{% if not has_data %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle me-2"></i>
+  暂无净值数据，请点击「更新数据」按钮拉取。
+</div>
+{% else %}
+
+<!-- 天数选择 -->
+<div class="d-flex gap-2 mb-3 align-items-center">
+  <span class="text-muted small">显示范围：</span>
+  {% for d, label in [(30,'近30天'),(90,'近3月'),(180,'近半年'),(365,'近一年')] %}
+  <button class="btn btn-sm {% if loop.last %}btn-warning{% else %}btn-outline-secondary{% endif %} days-btn"
+          data-days="{{ d }}">{{ label }}</button>
+  {% endfor %}
+</div>
+
+<!-- 图表区域 -->
+<div class="row g-3">
+  <div class="col-12">
+    <div class="card border-secondary">
+      <div class="card-header py-2 text-muted small d-flex align-items-center justify-content-between">
+        <span>净值走势 & 均线</span>
+        <button type="button"
+                class="btn btn-link text-warning p-0 border-0"
+                data-bs-toggle="popover"
+                data-bs-trigger="focus"
+                data-bs-placement="left"
+                data-bs-html="true"
+                title="净值走势 & 均线 是什么？"
+                data-bs-content="<div class='small'>净值走势显示基金每日净值变化；均线（MA5/10/20/60）是不同时间窗口的平均价格，用来观察趋势。<br><br><b>常见理解：</b><br>• 短均线在长均线上方，常被视为偏强趋势。<br>• 短均线下穿长均线，常提示趋势转弱。<br>• 价格远离均线后，可能出现回归。</div>"
+                aria-label="查看净值与均线说明">
+          <i class="bi bi-exclamation-circle-fill"></i>
+        </button>
+      </div>
+      <div class="card-body p-0"><div id="chart-nav" style="height:320px;"></div></div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-4">
+    <div class="card border-secondary h-100">
+      <div class="card-header py-2 text-muted small d-flex align-items-center justify-content-between">
+        <span>RSI（相对强弱）</span>
+        <button type="button"
+                class="btn btn-link text-warning p-0 border-0"
+                data-bs-toggle="popover"
+                data-bs-trigger="focus"
+                data-bs-placement="left"
+                data-bs-html="true"
+                title="RSI 是什么？"
+                data-bs-content="<div class='small'>RSI（相对强弱指标）用于衡量最近涨跌动能，范围通常是 0-100。<br><br><b>常见阈值：</b><br>• RSI &gt; 70：可能偏热（超买）<br>• RSI &lt; 30：可能偏冷（超卖）<br><br>它不是绝对买卖点，建议结合趋势和新闻一起看。</div>"
+                aria-label="查看RSI说明">
+          <i class="bi bi-exclamation-circle-fill"></i>
+        </button>
+      </div>
+      <div class="card-body p-0"><div id="chart-rsi" style="height:180px;"></div></div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-8">
+    <div class="card border-secondary h-100">
+      <div class="card-header py-2 text-muted small d-flex align-items-center justify-content-between">
+        <span>MACD</span>
+        <button type="button"
+                class="btn btn-link text-warning p-0 border-0"
+                data-bs-toggle="popover"
+                data-bs-trigger="focus"
+                data-bs-placement="left"
+                data-bs-html="true"
+                title="MACD 是什么？"
+                data-bs-content="<div class='small'>MACD 由 DIF、DEA 和柱状图组成，用于判断趋势和动量变化。<br><br><b>常见理解：</b><br>• DIF 上穿 DEA：常称金叉，偏多信号。<br>• DIF 下穿 DEA：常称死叉，偏空信号。<br>• 柱状图由负转正，常表示动能改善。</div>"
+                aria-label="查看MACD说明">
+          <i class="bi bi-exclamation-circle-fill"></i>
+        </button>
+      </div>
+      <div class="card-body p-0"><div id="chart-macd" style="height:180px;"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 技术指标速览 -->
+<div id="tech-summary" class="row g-2 mt-1">
+  <!-- 由 JS 填充 -->
+</div>
+
+{% endif %}
+
+<!-- AI 分析结果 -->
+{% if analysis %}
+<div class="card border-secondary mt-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-robot me-2 text-warning"></i>AI 投资分析</span>
+    <div class="d-flex align-items-center gap-2">
+      {% if analysis.recommendation == 'BUY' %}
+        <span class="badge bg-success fs-6"><i class="bi bi-arrow-up-circle me-1"></i>买入</span>
+      {% elif analysis.recommendation == 'SELL' %}
+        <span class="badge bg-danger fs-6"><i class="bi bi-arrow-down-circle me-1"></i>卖出/减仓</span>
+      {% else %}
+        <span class="badge bg-warning text-dark fs-6"><i class="bi bi-dash-circle me-1"></i>持有</span>
+      {% endif %}
+      <small class="text-muted">{{ analysis.created_at[:16] }}</small>
+    </div>
+  </div>
+  <div class="card-body analysis-content">
+    <div class="row g-3 mb-3">
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">技术评分</div>
+        <div class="fw-bold {% if analysis.technical_score > 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ '%.2f'|format(analysis.technical_score) }}
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">情绪评分</div>
+        <div class="fw-bold {% if analysis.sentiment_score > 0 %}text-success{% else %}text-danger{% endif %}">
+          {{ '%.2f'|format(analysis.sentiment_score) }}
+        </div>
+      </div>
+    </div>
+    <div class="analysis-text">{{ analysis.full_analysis | safe }}</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 历史分析记录 -->
+{% if history and history|length > 1 %}
+<div class="mt-4">
+  <h6 class="text-muted mb-2"><i class="bi bi-clock-history me-1"></i>历史分析记录</h6>
+  <div class="table-responsive">
+    <table class="table table-dark table-hover table-sm">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>建议</th>
+          <th>技术评分</th>
+          <th>情绪评分</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in history %}
+        <tr>
+          <td>{{ h.created_at[:16] }}</td>
+          <td>
+            {% if h.recommendation == 'BUY' %}<span class="badge bg-success">买入</span>
+            {% elif h.recommendation == 'SELL' %}<span class="badge bg-danger">卖出</span>
+            {% else %}<span class="badge bg-warning text-dark">持有</span>{% endif %}
+          </td>
+          <td class="{% if h.technical_score > 0 %}text-success{% else %}text-danger{% endif %}">
+            {{ '%.2f'|format(h.technical_score) }}
+          </td>
+          <td class="{% if h.sentiment_score > 0 %}text-success{% else %}text-danger{% endif %}">
+            {{ '%.2f'|format(h.sentiment_score) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const FUND_CODE = "{{ fund.code }}";
+const PLOTLY_LAYOUT_DEFAULTS = {
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor:  'rgba(0,0,0,0)',
+  font: { color: '#adb5bd', size: 11 },
+  xaxis: { gridcolor: '#2d3748', showspikes: true, spikecolor: '#888', spikethickness: 1 },
+  yaxis: { gridcolor: '#2d3748' },
+  margin: { t: 10, b: 30, l: 50, r: 10 },
+  hovermode: 'x unified',
+  showlegend: true,
+  legend: { orientation: 'h', y: 1.02, bgcolor: 'rgba(0,0,0,0)' },
+};
+
+let currentDays = 365;
+
+function renderCharts(days) {
+  if (typeof Plotly === 'undefined') {
+    console.error('Plotly 未加载，无法渲染图表');
+    const chartIds = ['chart-nav', 'chart-rsi', 'chart-macd'];
+    chartIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-muted">图表库未加载，请刷新页面重试</div>';
+      }
+    });
+    return;
+  }
+
+  fetch(`/api/fund/${FUND_CODE}/data?days=${days}`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert(d.error); return; }
+      drawNavChart(d);
+      drawRsiChart(d);
+      drawMacdChart(d);
+      drawTechSummary(d);
+    })
+    .catch(e => console.error('Chart error:', e));
+}
+
+function drawNavChart(d) {
+  const traces = [
+    { x: d.dates, y: d.nav,   name: '单位净值', line: { color: '#4dabf7', width: 2 }, type: 'scatter' },
+    { x: d.dates, y: d.ma5,   name: 'MA5',      line: { color: '#ffd43b', width: 1, dash: 'dot' }, type: 'scatter' },
+    { x: d.dates, y: d.ma10,  name: 'MA10',     line: { color: '#ff922b', width: 1, dash: 'dot' }, type: 'scatter' },
+    { x: d.dates, y: d.ma20,  name: 'MA20',     line: { color: '#69db7c', width: 1, dash: 'dash' }, type: 'scatter' },
+    { x: d.dates, y: d.ma60,  name: 'MA60',     line: { color: '#da77f2', width: 1, dash: 'dash' }, type: 'scatter' },
+    {
+      x: [...d.dates, ...d.dates.slice().reverse()],
+      y: [...d.bb_upper, ...d.bb_lower.slice().reverse()],
+      fill: 'toself', fillcolor: 'rgba(100,100,200,0.08)',
+      line: { color: 'transparent' }, name: '布林带', showlegend: true, type: 'scatter',
+    },
+  ];
+  Plotly.react('chart-nav', traces,
+    { ...PLOTLY_LAYOUT_DEFAULTS, yaxis: { ...PLOTLY_LAYOUT_DEFAULTS.yaxis, title: '净值' } },
+    { responsive: true, displayModeBar: false });
+}
+
+function drawRsiChart(d) {
+  const traces = [
+    { x: d.dates, y: d.rsi, name: 'RSI(14)', line: { color: '#74c0fc' }, type: 'scatter' },
+    { x: d.dates, y: Array(d.dates.length).fill(70), name: '超买(70)',
+      line: { color: '#ff6b6b', dash: 'dash', width: 1 }, type: 'scatter', showlegend: false },
+    { x: d.dates, y: Array(d.dates.length).fill(30), name: '超卖(30)',
+      line: { color: '#69db7c', dash: 'dash', width: 1 }, type: 'scatter', showlegend: false },
+  ];
+  Plotly.react('chart-rsi', traces,
+    { ...PLOTLY_LAYOUT_DEFAULTS, yaxis: { ...PLOTLY_LAYOUT_DEFAULTS.yaxis, range: [0, 100] }, showlegend: false },
+    { responsive: true, displayModeBar: false });
+}
+
+function drawMacdChart(d) {
+  const colors = d.histogram.map(v => v >= 0 ? '#69db7c' : '#ff6b6b');
+  const traces = [
+    { x: d.dates, y: d.macd,      name: 'DIF',  line: { color: '#4dabf7', width: 1.5 }, type: 'scatter' },
+    { x: d.dates, y: d.signal,    name: 'DEA',  line: { color: '#ffd43b', width: 1.5 }, type: 'scatter' },
+    { x: d.dates, y: d.histogram, name: 'MACD柱', type: 'bar', marker: { color: colors } },
+  ];
+  Plotly.react('chart-macd', traces,
+    { ...PLOTLY_LAYOUT_DEFAULTS, barmode: 'overlay' },
+    { responsive: true, displayModeBar: false });
+}
+
+function drawTechSummary(d) {
+  const last = arr => arr ? arr.filter(v => v != null).slice(-1)[0] : null;
+  const fmt  = (v, decimals=4) => v != null ? Number(v).toFixed(decimals) : '—';
+
+  const rsi     = last(d.rsi);
+  const latestNAV  = last(d.nav);
+  const ma5val  = last(d.ma5);
+  const ma20val = last(d.ma20);
+  const macd    = last(d.macd);
+  const signal  = last(d.signal);
+  const trend   = (ma5val && ma20val) ? (ma5val > ma20val ? '多头' : '空头') : '—';
+  const trendCls = trend === '多头' ? 'text-success' : trend === '空头' ? 'text-danger' : '';
+
+  const rsiDesc = rsi < 30 ? '<span class="text-success">超卖</span>'
+               : rsi > 70 ? '<span class="text-danger">超买</span>'
+               : '正常';
+  const macdDesc = (macd != null && signal != null)
+    ? (macd > signal ? '<span class="text-success">金叉</span>' : '<span class="text-danger">死叉</span>')
+    : '—';
+
+  const items = [
+    ['当前净值', fmt(latestNAV)],
+    ['MA5',     fmt(ma5val)],
+    ['MA20',    fmt(ma20val)],
+    ['均线趋势', `<span class="${trendCls}">${trend}</span>`],
+    ['RSI',    `${fmt(rsi, 1)} ${rsiDesc}`],
+    ['MACD',   macdDesc],
+  ];
+
+  const el = document.getElementById('tech-summary');
+  if (!el) return;
+  el.innerHTML = items.map(([k, v]) => `
+    <div class="col-6 col-md-4 col-xl-2">
+      <div class="card border-secondary text-center py-2 px-1">
+        <div class="text-muted small">${k}</div>
+        <div class="fw-bold">${v}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// 天数切换按钮
+document.querySelectorAll('.days-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.days-btn').forEach(b => {
+      b.classList.remove('btn-warning');
+      b.classList.add('btn-outline-secondary');
+    });
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-warning');
+    currentDays = parseInt(btn.dataset.days);
+    renderCharts(currentDays);
+  });
+});
+
+// 将分析文本中的 Markdown 标题美化
+document.querySelectorAll('.analysis-text').forEach(el => {
+  el.innerHTML = el.innerHTML
+    .replace(/^## (.+)$/gm, '<h6 class="text-warning mt-3 mb-1">$1</h6>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+});
+
+// 初始加载
+if (document.getElementById('chart-nav')) {
+  renderCharts(365);
+}
+</script>
+{% endblock %}

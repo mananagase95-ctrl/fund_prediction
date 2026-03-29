@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}看板 — 基金分析系统{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mt-4 mb-3">
+  <h4 class="mb-0"><i class="bi bi-bar-chart-fill text-warning me-2"></i>我的基金看板</h4>
+  <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#addFundModal">
+    <i class="bi bi-plus-lg me-1"></i>添加基金
+  </button>
+</div>
+
+{% if fund_cards %}
+<div class="row g-3">
+  {% for f in fund_cards %}
+  {% set nav  = f.latest_nav %}
+  {% set ana  = f.latest_analysis %}
+  {% set rec  = ana.recommendation if ana else '' %}
+
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card fund-card h-100 border-secondary">
+      <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <div>
+          <span class="fw-bold text-info">{{ f.name or f.code }}</span>
+          <small class="text-muted ms-2">{{ f.code }}</small>
+        </div>
+        <!-- 建议标签 -->
+        {% if rec == 'BUY' %}
+          <span class="badge bg-success fs-6"><i class="bi bi-arrow-up-circle me-1"></i>买入</span>
+        {% elif rec == 'SELL' %}
+          <span class="badge bg-danger fs-6"><i class="bi bi-arrow-down-circle me-1"></i>卖出</span>
+        {% elif rec == 'HOLD' %}
+          <span class="badge bg-warning text-dark fs-6"><i class="bi bi-dash-circle me-1"></i>持有</span>
+        {% else %}
+          <span class="badge bg-secondary fs-6">未分析</span>
+        {% endif %}
+      </div>
+
+      <div class="card-body py-2">
+        <div class="row text-center g-2">
+          <div class="col-6">
+            <div class="text-muted small">单位净值</div>
+            <div class="fs-5 fw-bold {% if nav and nav.daily_return and nav.daily_return > 0 %}text-success{% elif nav and nav.daily_return and nav.daily_return < 0 %}text-danger{% endif %}">
+              {{ '%.4f'|format(nav.nav) if nav and nav.nav else '—' }}
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">日涨跌</div>
+            <div class="fs-5 fw-bold {% if nav and nav.daily_return and nav.daily_return > 0 %}text-success{% elif nav and nav.daily_return and nav.daily_return < 0 %}text-danger{% endif %}">
+              {% if nav and nav.daily_return is not none %}
+                {{ '%+.2f'|format(nav.daily_return) }}%
+              {% else %}—{% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if nav %}
+        <div class="text-center mt-1">
+          <small class="text-muted">{{ nav.nav_date }}</small>
+          <small class="ms-2 text-muted">累计净值：{{ '%.4f'|format(nav.acc_nav) if nav.acc_nav else '—' }}</small>
+        </div>
+        {% endif %}
+
+        {% if ana %}
+        <div class="mt-2 small text-muted">
+          <i class="bi bi-clock me-1"></i>分析于 {{ ana.created_at[:16] }}
+          | 技术评分：<span class="{% if ana.technical_score > 0 %}text-success{% else %}text-danger{% endif %}">
+            {{ '%.2f'|format(ana.technical_score) }}</span>
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2 mt-2">
+          <small class="text-muted">{{ f.fund_type or '—' }}</small>
+        </div>
+      </div>
+
+      <div class="card-footer py-2 d-flex gap-2 justify-content-end">
+        <!-- 更新数据 -->
+        <form method="post" action="{{ url_for('fund_update', code=f.code) }}">
+          <button type="submit" class="btn btn-outline-secondary btn-sm" title="更新净值数据">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </form>
+        <!-- 查看详情 -->
+        <a href="{{ url_for('fund_detail', code=f.code) }}"
+           class="btn btn-outline-info btn-sm">
+          <i class="bi bi-eye me-1"></i>详情
+        </a>
+        <!-- 删除 -->
+        <form method="post" action="{{ url_for('fund_delete', code=f.code) }}"
+              onsubmit="return confirm('确认删除基金 {{ f.code }} 及其所有数据？')">
+          <button type="submit" class="btn btn-outline-danger btn-sm" title="删除">
+            <i class="bi bi-trash3"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-inbox display-3"></i>
+  <p class="mt-3 fs-5">暂无基金，点击右上角「添加基金」开始使用</p>
+  <small>支持：开放式基金、ETF、LOF（输入6位基金代码）</small>
+</div>
+{% endif %}
+
+<!-- 添加基金 Modal -->
+<div class="modal fade" id="addFundModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="bi bi-plus-circle me-2 text-warning"></i>添加基金</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{{ url_for('fund_add') }}">
+        <div class="modal-body">
+          <label class="form-label">基金代码</label>
+          <input type="text" name="code" class="form-control bg-secondary border-0 text-white"
+                 placeholder="例如：000001（开放式）  510050（ETF）"
+                 maxlength="10" required pattern="[0-9A-Za-z]+">
+          <div class="form-text text-muted mt-2">
+            <i class="bi bi-info-circle me-1"></i>
+            输入6位纯数字基金代码（开放式基金、ETF、LOF均可）。
+            添加后系统将自动拉取历史净值数据。
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-download me-1"></i>添加并拉取数据
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
