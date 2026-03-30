@@ -239,22 +239,42 @@ def _build_prompt(fund: dict, indicators: dict, news_items: list,
 
 
 def _call_llm(prompt: str) -> str:
-    """调用大模型 API，返回文本。API Key 未配置时返回 None。"""
+    """调用大模型 API，返回文本。API Key 未配置时返回 None。
+    优先使用 Anthropic SDK（支持原生 Claude 协议），
+    若 base_url 以 openai.com 结尾则回退到 OpenAI SDK。
+    """
     if not config.AI_API_KEY:
         return None
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=config.AI_API_KEY, base_url=config.AI_API_BASE)
-        response = client.chat.completions.create(
-            model=config.AI_MODEL,
-            messages=[
-                {'role': 'system', 'content': '你是专业的中国公募基金投资顾问，分析准确、逻辑清晰。'},
-                {'role': 'user',   'content': prompt},
-            ],
-            temperature=0.3,
-            max_tokens=2000,
-        )
-        return response.choices[0].message.content
+        use_openai = 'openai.com' in (config.AI_API_BASE or '')
+        if use_openai:
+            from openai import OpenAI
+            client = OpenAI(api_key=config.AI_API_KEY, base_url=config.AI_API_BASE)
+            response = client.chat.completions.create(
+                model=config.AI_MODEL,
+                messages=[
+                    {'role': 'system', 'content': '你是专业的中国公募基金投资顾问，分析准确、逻辑清晰。'},
+                    {'role': 'user',   'content': prompt},
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+            return response.choices[0].message.content
+        else:
+            import anthropic
+            client = anthropic.Anthropic(
+                api_key=config.AI_API_KEY,
+                base_url=config.AI_API_BASE,
+                default_headers={'Token': config.AI_API_KEY},
+            )
+            response = client.messages.create(
+                model=config.AI_MODEL,
+                system='你是专业的中国公募基金投资顾问，分析准确、逻辑清晰。',
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+            return response.content[0].text
     except Exception as e:
         logger.error(f"LLM API 调用失败: {e}")
         return None

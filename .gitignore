@@ -10,6 +10,9 @@ venv/
 # Environment files
 .env
 
+# 本地 API 配置（含密钥，不上传）
+api_config.yaml
+
 # Local database and sqlite runtime files
 *.db
 *.db-shm
